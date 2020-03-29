@@ -21,8 +21,9 @@ import numpy
 import theano
 import random
 import theano.tensor as T
-from sklearn import cross_validation
-import cPickle
+from sklearn import model_selection
+from sklearn.model_selection import train_test_split
+import _pickle as cPickle
 
 theano.config.openmp=True
    
@@ -50,7 +51,7 @@ def createSharedDataset(data, borrow=True, cast_int=False):
 
 class CoxRegression(object):
     def __init__(self, input, n_in):
-        self.W = theano.shared(value=numpy.zeros((n_in,1),dtype=theano.config.floatX), name='W_cox',borrow=True)
+        self.W = theano.shared(value=numpy.zeros((int(n_in),1),dtype=theano.config.floatX), name='W_cox',borrow=True)
         # b_values = numpy.zeros((1,), dtype=theano.config.floatX)
         # self.b = theano.shared(value=b_values, name='b_cox', borrow=True) #intercept term is unnecessary
         
@@ -77,17 +78,17 @@ class HiddenLayer(object):
         b = [0] * len(map)
         input = numpy.asarray(input)
         input_cat = [0] * len(map)
-        for i in xrange(len(map)):
+        for i in range(len(map)):
             W_values = numpy.asarray(
                 rng.uniform(
                     low=-numpy.sqrt(6. / (map[i][0] + map[i][2])),
                     high=numpy.sqrt(6. / (map[i][0] + map[i][2])),
-                    size=(map[i][0], map[i][2])
+                    size=(int(map[i][0]), int(map[i][2]))
                 ),
                 dtype=theano.config.floatX
             )
             W[i] = theano.shared(value=W_values, name='W_' + str(label) + '_' + str(i), borrow=True)
-            b_values = numpy.zeros((map[i][2],), dtype=theano.config.floatX)
+            b_values = numpy.zeros((int(map[i][2]),), dtype=theano.config.floatX)
             b[i] = theano.shared(value=b_values, name='b_' + str(label) + '_' + str(i), borrow=True)
             input_cat[i] = input[map[i][1][0]] if len(map[i][1]) == 1 else T.concatenate(input[map[i][1]].tolist(), axis=1)
         
@@ -99,14 +100,14 @@ class HiddenLayer(object):
         self.input_cat = input_cat
         
         output = [0] * len(self.map)
-        for i in xrange(len(self.map)):
+        for i in range(len(self.map)):
             output[i] = self.activation(T.dot(self.input_cat[i], self.W[i]) + self.b[i])
             
         self.output = output
         
         # def nesterovOutput(self, new_W, new_b):
             # output = [0] * len(self.map)
-            # for i in xrange(len(self.map)):
+            # for i in range(len(self.map)):
                 # output[i] = self.activation(T.dot(self.input_cat[i], new_W[i]) + new_b[i])
             # return(output)
         
@@ -116,7 +117,7 @@ class HiddenLayer(object):
     def evalNewData(self, test_data):
         test_data = numpy.asarray(test_data)
         output = [0] * len(self.W)
-        for i in xrange(len(self.W)):
+        for i in range(len(self.W)):
             input_cat_i = test_data[self.map[i][1][0]] if len(self.map[i][1]) == 1 else T.concatenate(test_data[self.map[i][1]].tolist(), axis=1)
             output[i] = self.activation(T.dot(input_cat_i, self.W[i]) + self.b[i])
             
@@ -150,7 +151,7 @@ class CoxMlp(object):
         self.W = []
         self.b = []
 
-        for i in xrange(len(self.node_map)):
+        for i in range(len(self.node_map)):
             hidden_layer = HiddenLayer(
             rng=self.rng,
             input=self.input if i == 0 else self.hidden_list[i-1].output,
@@ -164,7 +165,7 @@ class CoxMlp(object):
             self.b.extend(hidden_layer.b)
     
         cox_in = 0
-        for i in xrange(len(self.node_map[-1])):
+        for i in range(len(self.node_map[-1])):
             cox_in += self.node_map[-1][i][2]
             
         self.cox_regression = CoxRegression(
@@ -176,7 +177,7 @@ class CoxMlp(object):
 
         #self.L2_sqr = T.sum(T.pow(self.W[0],2))
         self.L2_sqr = 0
-        for i in xrange(len(self.W)):
+        for i in range(len(self.W)):
             self.L2_sqr = self.L2_sqr + T.sum(T.pow(self.W[i],2))
             #self.L2_sqr = self.L2_sqr + pow(self.W[i], 2).sum()
         
@@ -194,7 +195,7 @@ class CoxMlp(object):
                 test_input[i] = createSharedDataset(x_test[:,self.input_split[i]])
 
         theta = test_input
-        for i in xrange(len(self.hidden_list)):
+        for i in range(len(self.hidden_list)):
             theta = self.hidden_list[i].evalNewData(theta)
 
         theta = self.cox_regression.evalNewData(theta).eval()
@@ -213,7 +214,7 @@ def predictNewData(model, x_test):
             test_input[i] = createSharedDataset(x_test[:,model.input_split[i]])
 
     theta = test_input
-    for i in xrange(len(model.hidden_list)):
+    for i in range(len(model.hidden_list)):
         theta = model.hidden_list[i].evalNewData(theta)
 
     theta = model.cox_regression.evalNewData(theta).eval()
@@ -329,13 +330,13 @@ def trainCoxMlp(x_train, ytime_train, ystatus_train, model_params = dict(), sear
     updates = []
     if method == "momentum":
         updates = momentumUpdate(cost, model.params, learning_rate, momentum)
-        print "Using momentum gradient"
+        print("Using momentum gradient")
     elif method == "nesterov":
         updates = nesterovUpdate(cost, model.params, learning_rate, momentum)
-        print "Using nesterov accelerated gradient"
+        print("Using nesterov accelerated gradient")
     else:
         updates = momentumUpdate(cost, model.params, learning_rate, 0)
-        print "Using gradient descent"
+        print("Using gradient descent")
     
     #gradiant example based on http://deeplearning.net/tutorial/code/mlp.py
     # g_W = T.grad(cost=cost, wrt=model.W)
@@ -353,8 +354,8 @@ def trainCoxMlp(x_train, ytime_train, ystatus_train, model_params = dict(), sear
     
     start = time.time()
     best_cost = numpy.inf
-    print "training model"
-    for iter in xrange(max_iter):
+    print("training model")
+    for iter in range(max_iter):
         train_model(iter)
         #print cost_iter
         # if method == "momentum" or method == "gradient":
@@ -364,16 +365,16 @@ def trainCoxMlp(x_train, ytime_train, ystatus_train, model_params = dict(), sear
                 best_cost = cost_iter
                 learning_rate.set_value(numpy.float32(learning_rate.get_value() * lr_decay))
                 if verbose == 2:
-                    print (('Decreasing learning rate: %f') % (learning_rate.get_value()))
+                    print((('Decreasing learning rate: %f') % (learning_rate.get_value())))
             else:
                 learning_rate.set_value(numpy.float32(learning_rate.get_value() * lr_growth))
                 if verbose == 2:
-                    print (('Increasing learning rate: %f') % (learning_rate.get_value()))
+                    print((('Increasing learning rate: %f') % (learning_rate.get_value())))
             
             if cost_iter < best_cost * stop_threshold:
                 best_cost = cost_iter
                 if verbose:
-                    print(('cost: %f, iteration: %i') % (best_cost, iter))
+                    print((('cost: %f, iteration: %i') % (best_cost, iter)))
                     
                 patience = max(patience, iter * patience_incr)
             
@@ -382,8 +383,8 @@ def trainCoxMlp(x_train, ytime_train, ystatus_train, model_params = dict(), sear
                 
         #print cost_iter
     
-    print (('running time: %f seconds') % (time.time() - start))
-    print (('total iterations: %f') % (iter))
+    print(('running time: %f seconds') % (time.time() - start))
+    print(('total iterations: %f') % (iter))
     return(model, cost_iter)
 
 
@@ -438,9 +439,12 @@ def crossValidate(x_train, ytime_train, ystatus_train, model_params = dict(),sea
 
     N_train = ytime_train.shape[0]
     cv_likelihoods = numpy.zeros([n_folds], dtype=numpy.dtype("float64"))
-    cv_folds=cross_validation.KFold(N_train,n_folds=n_folds, shuffle=True, random_state=cv_seed)
+    kf = model_selection.KFold(n_splits=n_folds, shuffle=True, random_state=cv_seed)
+
     k=0
-    for traincv, testcv in cv_folds:
+
+
+    for traincv, testcv in kf.split(range(N_train)):
         x_train_cv = x_train[traincv]
         ytime_train_cv = ytime_train[traincv]
         ystatus_train_cv = ystatus_train[traincv]
@@ -520,7 +524,7 @@ def L2CVProfile(x_train, ytime_train, ystatus_train, model_params = dict(),searc
     cv_likelihoods = numpy.zeros([len(L2_range), n_folds], dtype=float)
     mean_cvpl = numpy.zeros(len(L2_range), dtype="float")
     
-    for i in xrange(len(L2_range)):
+    for i in range(len(L2_range)):
         model_params['L2_reg'] = numpy.exp(L2_range[i])
         cvpl = crossValidate(x_train, ytime_train, ystatus_train, model_params, search_params, cv_params, verbose=verbose)
         
@@ -535,7 +539,7 @@ def L2Profile(x_train, ytime_train, ystatus_train, x_validation, ytime_validatio
     N_train = ytime_train.shape[0]
     
     likelihoods = []
-    for i in xrange(len(L2_range)):
+    for i in range(len(L2_range)):
         model_params['L2_reg'] = numpy.exp(L2_range[i])
         model, cost_iter = trainCoxMlp(x_train = x_train, ytime_train = ytime_train, ystatus_train = ystatus_train, model_params = model_params, search_params = search_params, verbose=verbose)
         
@@ -566,9 +570,9 @@ def varImportance(model, x_train, ytime_train, ystatus_train):
     PL_train = numpy.sum((theta - numpy.log(numpy.sum(exp_theta * R_matrix_train,axis=1))) * ystatus_train)
     
     PL_mod = numpy.zeros([x_train.shape[1]])
-    for k in xrange(x_train.shape[1]):
+    for k in range(x_train.shape[1]):
         if (k+1) % 100 == 0:
-            print str(k+1) + "..."
+            print(str(k+1) + "...")
             
         xk_mean = numpy.mean(x_train[:,k])
         xk_train = numpy.copy(x_train)
@@ -596,9 +600,9 @@ def loadModel(file_name):
     W,b, node_map, input_split, n_samples, x_train, rng = cPickle.load(f)
     f.close()
     model = CoxMlp(rng = rng, x_train=x_train, n_samples = n_samples, node_map = node_map, input_split = input_split)
-    for i in xrange(len(W)):
+    for i in range(len(W)):
         model.W[i].set_value(W[i])
-    for i in xrange(len(b)):
+    for i in range(len(b)):
         model.b[i].set_value(b[i])
         
     return(model)
